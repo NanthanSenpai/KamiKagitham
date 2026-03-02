@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Japanese Reading Assistant</title>
+    <style>
+        :root {
+            --primary: #e63946;
+            --bg: #f1faee;
+            --text: #1d3557;
+            --light: #a8dadc;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 { color: var(--primary); text-align: center; }
+        .setup-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        input, select, button {
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        button:hover { background-color: #c1121f; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        #article-container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            font-size: 1.5rem;
+            line-height: 2;
+            min-height: 200px;
+            position: relative;
+        }
+        
+        /* Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+        .modal {
+            display: none;
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            z-index: 1000;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        .modal h2 { margin-top: 0; color: var(--primary); }
+        .close-btn {
+            background: #ccc; color: black; margin-top: 15px; width: 100%;
+        }
+        .loader {
+            text-align: center; font-style: italic; color: #666;
+        }
+        .instructions { font-size: 0.9rem; color: #666; text-align: center; margin-top: -10px;}
+    </style>
+</head>
+<body>
+
+    <h1>AI Japanese Reader</h1>
+    
+    <div class="setup-panel">
+        <input type="password" id="api-key" placeholder="Enter your Gemini API Key">
+        <select id="jlpt-level">
+            <option value="N5">N5 (Beginner)</option>
+            <option value="N4">N4 (Upper Beginner)</option>
+            <option value="N3">N3 (Intermediate)</option>
+            <option value="N2">N2 (Upper Intermediate)</option>
+            <option value="N1">N1 (Advanced)</option>
+        </select>
+        <input type="text" id="interest" placeholder="What do you want to read about? (e.g., Technology, Anime, Cooking)">
+        <button id="generate-btn" onclick="generateArticle()">Generate Article</button>
+    </div>
+
+    <p class="instructions">✨ Highlight any Japanese text in the article below to get an explanation! ✨</p>
+
+    <div id="article-container">
+        Your generated article will appear here...
+    </div>
+
+    <div class="modal-overlay" id="modal-overlay" onclick="closeModal()"></div>
+    <div class="modal" id="explanation-modal">
+        <h2 id="selected-word-title">Word</h2>
+        <div id="explanation-content">Loading explanation...</div>
+        <button class="close-btn" onclick="closeModal()">Close</button>
+    </div>
+
+    <script>
+        // Core function to interact with Gemini API
+        async function callGemini(prompt, apiKey) {
+            // Using gemini-2.5-flash as it is fast and excellent for language tasks
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+            
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }]
+            };
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`API Error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.candidates[0].content.parts[0].text;
+        }
+
+        // 1. Generate the Article
+        async function generateArticle() {
+            const apiKey = document.getElementById('api-key').value.trim();
+            const level = document.getElementById('jlpt-level').value;
+            const interest = document.getElementById('interest').value.trim();
+            const btn = document.getElementById('generate-btn');
+            const container = document.getElementById('article-container');
+
+            if (!apiKey || !interest) {
+                alert("Please enter both your API key and an interest.");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = "Generating...";
+            container.innerHTML = '<div class="loader">Generating your custom article... Please wait.</div>';
+
+            const prompt = `Write a short, engaging article (around 150-200 words) about ${interest}. 
+            The Japanese vocabulary and grammar used MUST be strictly at the JLPT ${level} difficulty level. 
+            Do not include English translations, romaji, or furigana in the text. Output ONLY the Japanese text.`;
+
+            try {
+                const article = await callGemini(prompt, apiKey);
+                // Render text, preserving line breaks
+                container.innerHTML = article.replace(/\n/g, '<br>');
+            } catch (error) {
+                container.innerHTML = `<span style="color: red;">Error generating article. Please check your API key. (${error.message})</span>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Generate Article";
+            }
+        }
+
+        // 2. Handle Text Selection for Explanation
+        document.getElementById('article-container').addEventListener('mouseup', async () => {
+            const selectedText = window.getSelection().toString().trim();
+            const apiKey = document.getElementById('api-key').value.trim();
+            
+            if (selectedText.length > 0 && selectedText.length < 50) { // Limit length so they don't highlight the whole page
+                if (!apiKey) {
+                    alert("API key missing. Cannot fetch explanation.");
+                    return;
+                }
+                openModal(selectedText);
+                await fetchExplanation(selectedText, apiKey);
+            }
+        });
+
+        // 3. Fetch Explanation from Gemini
+        async function fetchExplanation(word, apiKey) {
+            const contentDiv = document.getElementById('explanation-content');
+            const level = document.getElementById('jlpt-level').value;
+            
+            const prompt = `Analyze the Japanese text: "${word}". It was found in a JLPT ${level} text. 
+            Provide a response formatted exactly like this:
+            
+            **Reading:** (Provide Hiragana and Romaji)
+            **Meaning:** (English meaning)
+            **Grammar:** (Briefly explain the grammatical role, part of speech, or nuance)
+            **Examples:**
+            1. (Japanese example sentence) - (English translation)
+            2. (Japanese example sentence) - (English translation)`;
+
+            try {
+                const explanation = await callGemini(prompt, apiKey);
+                // Convert markdown bolding to HTML for display
+                contentDiv.innerHTML = explanation.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+            } catch (error) {
+                contentDiv.innerHTML = `<span style="color: red;">Error fetching explanation. ${error.message}</span>`;
+            }
+        }
+
+        // Modal Controls
+        function openModal(word) {
+            document.getElementById('selected-word-title').innerText = `Analysis: ${word}`;
+            document.getElementById('explanation-content').innerHTML = '<div class="loader">Analyzing text...</div>';
+            document.getElementById('modal-overlay').style.display = 'block';
+            document.getElementById('explanation-modal').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('modal-overlay').style.display = 'none';
+            document.getElementById('explanation-modal').style.display = 'none';
+            window.getSelection().removeAllRanges(); // Clear selection
+        }
+    </script>
+</body>
+</html>
